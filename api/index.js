@@ -60,6 +60,7 @@ const FormatSchema = new mongoose.Schema({
   userId: String,
   title: String,
   isDefault: Boolean,
+  sharedWith: { type: [String], default: [] },
   updatedAt: { type: Date, default: Date.now }
 });
 
@@ -69,6 +70,7 @@ const EntrySchema = new mongoose.Schema({
   userId: String,
   valuesJson: String,
   isCalled: Boolean,
+  sharedWith: { type: [String], default: [] },
   updatedAt: { type: Date, default: Date.now }
 });
 
@@ -108,7 +110,7 @@ app.all('*', async (req, res) => {
     return res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' });
   }
 
-  // 2. ANNOUNCEMENT & ABOUT US READ (GET)
+  // 2. READ OPERATIONS
   if (method === 'GET') {
     if (action === 'getAnnouncement' || urlPath.includes('announcement')) {
       let announcementData = await Announcement.findOne();
@@ -138,6 +140,20 @@ app.all('*', async (req, res) => {
       return res.json(aboutData);
     }
 
+    if (action === 'getSharedFormats') {
+      const email = query.email || query.userId || body.email || body.userId;
+      if (!email) return res.status(400).json({ success: false, error: "email parameter required" });
+      const sharedFormats = await Format.find({ sharedWith: email });
+      return res.json({ success: true, count: sharedFormats.length, formats: sharedFormats });
+    }
+
+    if (action === 'getSharedEntries') {
+      const email = query.email || query.userId || body.email || body.userId;
+      if (!email) return res.status(400).json({ success: false, error: "email parameter required" });
+      const sharedEntries = await Entry.find({ sharedWith: email });
+      return res.json({ success: true, count: sharedEntries.length, entries: sharedEntries });
+    }
+
     if (urlPath.includes('formats') || action === 'getFormats') {
       const userId = query.userId || body.userId;
       if (!userId) return res.status(400).json({ success: false, error: "userId query parameter required" });
@@ -159,7 +175,6 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, user });
     }
 
-    // Default Health Check Fallback for Root GET
     if (urlPath === '/' || urlPath === '/api') {
       return res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' });
     }
@@ -187,8 +202,39 @@ app.all('*', async (req, res) => {
     }
   }
 
-  // 4. CREATE & UPDATE (UPSERT) OPERATIONS
+  // 4. CREATE, UPDATE & SHARING OPERATIONS
   if (method === 'POST' || method === 'PUT') {
+    // Share Entire Format with Target Email
+    if (action === 'shareFormat') {
+      const { formatId, userId, targetEmail } = body;
+      if (!formatId || !targetEmail) return res.status(400).json({ success: false, error: "formatId and targetEmail required" });
+
+      const cleanEmail = targetEmail.trim().toLowerCase();
+      await Format.updateOne(
+        { formatId: Number(formatId), userId: String(userId) },
+        { $addToSet: { sharedWith: cleanEmail } }
+      );
+      await Entry.updateMany(
+        { formatId: Number(formatId), userId: String(userId) },
+        { $addToSet: { sharedWith: cleanEmail } }
+      );
+      return res.json({ success: true, message: `Format and all entries shared with ${cleanEmail}` });
+    }
+
+    // Share Single Contact Entry with Target Email
+    if (action === 'shareEntry') {
+      const { entryId, userId, targetEmail } = body;
+      if (!entryId || !targetEmail) return res.status(400).json({ success: false, error: "entryId and targetEmail required" });
+
+      const cleanEmail = targetEmail.trim().toLowerCase();
+      await Entry.updateOne(
+        { entryId: Number(entryId), userId: String(userId) },
+        { $addToSet: { sharedWith: cleanEmail } }
+      );
+      return res.json({ success: true, message: `Entry shared with ${cleanEmail}` });
+    }
+
+    // Sync User Profile
     if (action === 'syncUser' || urlPath.includes('users')) {
       const { userId, displayName, email, photoUrl } = body;
       if (!userId) return res.status(400).json({ success: false, error: "userId is required" });
@@ -200,6 +246,7 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, user });
     }
 
+    // Sync Formats
     if (action === 'syncFormats' || urlPath.includes('formats')) {
       const rawFormats = Array.isArray(body.formats || body) ? (body.formats || body) : [body];
       if (rawFormats.length === 0) return res.json({ success: true, count: 0 });
@@ -217,6 +264,7 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, count: rawFormats.length, result });
     }
 
+    // Sync Entries
     if (action === 'syncEntries' || urlPath.includes('entries')) {
       const rawEntries = Array.isArray(body.entries || body) ? (body.entries || body) : [body];
       if (rawEntries.length === 0) return res.json({ success: true, count: 0 });
