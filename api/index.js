@@ -194,8 +194,8 @@ app.all('*', async (req, res) => {
   // 3. USER-AUTHENTICATED DELETE OPERATIONS
   if (method === 'DELETE' || action === 'deleteFormat' || action === 'deleteEntry') {
     if (action === 'deleteFormat' || urlPath.includes('formats')) {
-      const formatId = query.formatId || body.formatId;
-      if (!formatId) return res.status(400).json({ success: false, error: "formatId required" });
+      const formatId = query.formatId !== undefined ? query.formatId : body.formatId;
+      if (formatId === undefined || formatId === null) return res.status(400).json({ success: false, error: "formatId required" });
 
       const deletedFormat = await Format.findOneAndDelete({ formatId: Number(formatId) });
       await Entry.deleteMany({ formatId: Number(formatId) });
@@ -203,8 +203,8 @@ app.all('*', async (req, res) => {
     }
 
     if (action === 'deleteEntry' || urlPath.includes('entries')) {
-      const entryId = query.entryId || body.entryId;
-      if (!entryId) return res.status(400).json({ success: false, error: "entryId required" });
+      const entryId = query.entryId !== undefined ? query.entryId : body.entryId;
+      if (entryId === undefined || entryId === null) return res.status(400).json({ success: false, error: "entryId required" });
 
       const deletedEntry = await Entry.findOneAndDelete({ entryId: Number(entryId) });
       return res.json({ success: true, deleted: !!deletedEntry });
@@ -216,7 +216,9 @@ app.all('*', async (req, res) => {
     // Share Entire Format with Target Email
     if (action === 'shareFormat') {
       const { formatId, targetEmail } = body;
-      if (!formatId || !targetEmail) return res.status(400).json({ success: false, error: "formatId and targetEmail required" });
+      if (formatId === undefined || formatId === null || !targetEmail) {
+        return res.status(400).json({ success: false, error: "formatId and targetEmail required" });
+      }
 
       const cleanEmail = targetEmail.trim().toLowerCase();
       await Format.updateOne(
@@ -233,7 +235,9 @@ app.all('*', async (req, res) => {
     // Revoke Format Share
     if (action === 'revokeFormatShare') {
       const { formatId, targetEmail } = body;
-      if (!formatId || !targetEmail) return res.status(400).json({ success: false, error: "formatId and targetEmail required" });
+      if (formatId === undefined || formatId === null || !targetEmail) {
+        return res.status(400).json({ success: false, error: "formatId and targetEmail required" });
+      }
 
       const cleanEmail = targetEmail.trim().toLowerCase();
       await Format.updateOne(
@@ -250,7 +254,9 @@ app.all('*', async (req, res) => {
     // Share Single Contact Entry
     if (action === 'shareEntry') {
       const { entryId, targetEmail } = body;
-      if (!entryId || !targetEmail) return res.status(400).json({ success: false, error: "entryId and targetEmail required" });
+      if (entryId === undefined || entryId === null || !targetEmail) {
+        return res.status(400).json({ success: false, error: "entryId and targetEmail required" });
+      }
 
       const cleanEmail = targetEmail.trim().toLowerCase();
       const targetEntry = await Entry.findOne({ entryId: Number(entryId) });
@@ -270,7 +276,9 @@ app.all('*', async (req, res) => {
     // Revoke Entry Share
     if (action === 'revokeEntryShare') {
       const { entryId, targetEmail } = body;
-      if (!entryId || !targetEmail) return res.status(400).json({ success: false, error: "entryId and targetEmail required" });
+      if (entryId === undefined || entryId === null || !targetEmail) {
+        return res.status(400).json({ success: false, error: "entryId and targetEmail required" });
+      }
 
       const cleanEmail = targetEmail.trim().toLowerCase();
       await Entry.updateOne(
@@ -297,7 +305,7 @@ app.all('*', async (req, res) => {
       const rawFormats = Array.isArray(body.formats || body) ? (body.formats || body) : [body];
       if (rawFormats.length === 0) return res.json({ success: true, count: 0 });
 
-      const bulkOps = rawFormats.filter(fmt => fmt && fmt.formatId).map(fmt => {
+      const bulkOps = rawFormats.filter(fmt => fmt && fmt.formatId !== undefined && fmt.formatId !== null).map(fmt => {
         const updateFields = {
           formatId: Number(fmt.formatId),
           userId: String(fmt.userId),
