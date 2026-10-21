@@ -72,9 +72,28 @@ const EntrySchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+const AboutSchema = new mongoose.Schema({
+  title: { type: String, default: "Student Directory App" },
+  version: { type: String, default: "v1.0.0" },
+  description: { type: String, default: "A modern, offline-first mobile solution for managing student contact records, dynamic form formats, and cloud sync." },
+  features: { type: [String], default: ["Dynamic Form Format Builder", "MongoDB Cloud Database Sync", "Caller ID Pop-Up", "Strict 10-Digit Phone Validation", "PDF Report Generation"] },
+  contactEmail: { type: String, default: "rrajak7499@gmail.com" },
+  websiteUrl: { type: String, default: "https://contact-list-api-tan.vercel.app/" }
+});
+
+const AnnouncementSchema = new mongoose.Schema({
+  enabled: { type: Boolean, default: false },
+  title: { type: String, default: "📢 Announcement" },
+  message: { type: String, default: "Welcome to Student Directory!" },
+  buttonText: { type: String, default: "Got It" },
+  actionUrl: { type: String, default: "" }
+});
+
 const User = mongoose.models.User || mongoose.model('User', UserSchema);
 const Format = mongoose.models.Format || mongoose.model('Format', FormatSchema);
 const Entry = mongoose.models.Entry || mongoose.model('Entry', EntrySchema);
+const About = mongoose.models.About || mongoose.model('About', AboutSchema);
+const Announcement = mongoose.models.Announcement || mongoose.model('Announcement', AnnouncementSchema);
 
 // Universal Master Handler for Vercel Serverless Function Routing
 app.all('*', async (req, res) => {
@@ -89,32 +108,24 @@ app.all('*', async (req, res) => {
     return res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' });
   }
 
-  // 2. USER-AUTHENTICATED DELETE OPERATIONS
-  if (method === 'DELETE' || action === 'deleteFormat' || action === 'deleteEntry') {
-    // Delete Format (Only for authenticated userId)
-    if (action === 'deleteFormat' || urlPath.includes('formats')) {
-      const formatId = query.formatId || body.formatId;
-      const userId = query.userId || body.userId;
-      if (!userId || !formatId) return res.status(400).json({ success: false, error: "userId and formatId required" });
-
-      const deletedFormat = await Format.findOneAndDelete({ formatId: Number(formatId), userId: String(userId) });
-      await Entry.deleteMany({ formatId: Number(formatId), userId: String(userId) });
-      return res.json({ success: true, deleted: !!deletedFormat });
-    }
-
-    // Delete Entry (Only for authenticated userId)
-    if (action === 'deleteEntry' || urlPath.includes('entries')) {
-      const entryId = query.entryId || body.entryId;
-      const userId = query.userId || body.userId;
-      if (!userId || !entryId) return res.status(400).json({ success: false, error: "userId and entryId required" });
-
-      const deletedEntry = await Entry.findOneAndDelete({ entryId: Number(entryId), userId: String(userId) });
-      return res.json({ success: true, deleted: !!deletedEntry });
-    }
-  }
-
-  // 3. READ / GET OPERATIONS
+  // 2. DYNAMIC ABOUT US & ANNOUNCEMENT POP-UP (GET)
   if (method === 'GET') {
+    if (urlPath.includes('about') || action === 'getAbout') {
+      let aboutData = await About.findOne();
+      if (!aboutData) {
+        aboutData = await About.create({});
+      }
+      return res.json(aboutData);
+    }
+
+    if (urlPath.includes('announcement') || action === 'getAnnouncement') {
+      let announcementData = await Announcement.findOne();
+      if (!announcementData) {
+        announcementData = await Announcement.create({});
+      }
+      return res.json(announcementData);
+    }
+
     if (urlPath.includes('formats') || action === 'getFormats') {
       const userId = query.userId || body.userId;
       if (!userId) return res.status(400).json({ success: false, error: "userId query parameter required" });
@@ -137,8 +148,21 @@ app.all('*', async (req, res) => {
     }
   }
 
-  // 4. CREATE & UPDATE (UPSERT) OPERATIONS
+  // 3. CREATE & UPDATE (UPSERT) OPERATIONS
   if (method === 'POST' || method === 'PUT') {
+    // Update Dynamic About Us
+    if (action === 'updateAbout' || urlPath.includes('about')) {
+      const updatedAbout = await About.findOneAndUpdate({}, body, { upsert: true, new: true });
+      return res.json({ success: true, about: updatedAbout });
+    }
+
+    // Update Dynamic Announcement Pop-Up Config
+    if (action === 'updateAnnouncement' || urlPath.includes('announcement')) {
+      const updatedAnnouncement = await Announcement.findOneAndUpdate({}, body, { upsert: true, new: true });
+      return res.json({ success: true, announcement: updatedAnnouncement });
+    }
+
+    // Sync User Profile
     if (action === 'syncUser' || urlPath.includes('users')) {
       const { userId, displayName, email, photoUrl } = body;
       if (!userId) return res.status(400).json({ success: false, error: "userId is required" });
@@ -150,6 +174,7 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, user });
     }
 
+    // Sync Formats
     if (action === 'syncFormats' || urlPath.includes('formats')) {
       const rawFormats = Array.isArray(body.formats || body) ? (body.formats || body) : [body];
       if (rawFormats.length === 0) return res.json({ success: true, count: 0 });
@@ -167,6 +192,7 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, count: rawFormats.length, result });
     }
 
+    // Sync Entries
     if (action === 'syncEntries' || urlPath.includes('entries')) {
       const rawEntries = Array.isArray(body.entries || body) ? (body.entries || body) : [body];
       if (rawEntries.length === 0) return res.json({ success: true, count: 0 });
@@ -190,6 +216,28 @@ app.all('*', async (req, res) => {
 
       const result = await Entry.bulkWrite(bulkOps);
       return res.json({ success: true, count: rawEntries.length, result });
+    }
+  }
+
+  // 4. USER-AUTHENTICATED DELETE OPERATIONS
+  if (method === 'DELETE' || action === 'deleteFormat' || action === 'deleteEntry') {
+    if (action === 'deleteFormat' || urlPath.includes('formats')) {
+      const formatId = query.formatId || body.formatId;
+      const userId = query.userId || body.userId;
+      if (!userId || !formatId) return res.status(400).json({ success: false, error: "userId and formatId required" });
+
+      const deletedFormat = await Format.findOneAndDelete({ formatId: Number(formatId), userId: String(userId) });
+      await Entry.deleteMany({ formatId: Number(formatId), userId: String(userId) });
+      return res.json({ success: true, deleted: !!deletedFormat });
+    }
+
+    if (action === 'deleteEntry' || urlPath.includes('entries')) {
+      const entryId = query.entryId || body.entryId;
+      const userId = query.userId || body.userId;
+      if (!userId || !entryId) return res.status(400).json({ success: false, error: "userId and entryId required" });
+
+      const deletedEntry = await Entry.findOneAndDelete({ entryId: Number(entryId), userId: String(userId) });
+      return res.json({ success: true, deleted: !!deletedEntry });
     }
   }
 
