@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 
@@ -6,36 +6,30 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Connection caching for Serverless environments
-let cachedConnection = null;
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://rrajak8806_db_user:CLrNapjCVuipXpqz@cluster0.s3h68ti.mongodb.net/my_school_db";
 
-async function connectToDatabase() {
-  if (cachedConnection && mongoose.connection.readyState === 1) {
-    return cachedConnection;
-  }
+let isConnected = false;
 
-  const uri = process.env.MONGODB_URI || "mongodb+srv://rrajak8806_db_user:CLrNapjCVuipXpqz@cluster0.s3h68ti.mongodb.net/my_school_db";
-;
-  if (!uri) {
-    throw new Error("MONGODB_URI environment variable is not defined");
-  }
-
-  cachedConnection = await mongoose.connect(uri, {
-    bufferCommands: false,
-    serverSelectionTimeoutMS: 5000
-  });
-
-  return cachedConnection;
-}
-
-// Database connection middleware
-app.use(async (req, res, next) => {
+async function connectDB() {
+  if (isConnected && mongoose.connection.readyState === 1) return;
   try {
-    await connectToDatabase();
-    next();
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000
+    });
+    isConnected = true;
+    console.log("Connected to MongoDB Atlas: my_school_db");
   } catch (err) {
     console.error("MongoDB Connection Error:", err);
-    res.status(500).json({ success: false, error: "Database connection failed" });
+    throw err;
+  }
+}
+
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -69,13 +63,13 @@ const User = mongoose.models.User || mongoose.model('User', UserSchema);
 const Format = mongoose.models.Format || mongoose.model('Format', FormatSchema);
 const Entry = mongoose.models.Entry || mongoose.model('Entry', EntrySchema);
 
-// Ping / Health Check
+app.get('/', (req, res) => res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' }));
 app.get('/api', (req, res) => res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' }));
 
-// User Profile Sync
 app.post('/api/users', async (req, res) => {
   try {
     const { userId, displayName, email, photoUrl } = req.body;
+    if (!userId) return res.status(400).json({ success: false, error: "userId is required" });
     const user = await User.findOneAndUpdate(
       { userId },
       { displayName, email, photoUrl, updatedAt: new Date() },
@@ -87,7 +81,6 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-// Formats Sync
 app.post('/api/formats', async (req, res) => {
   try {
     const formats = Array.isArray(req.body) ? req.body : [req.body];
@@ -104,7 +97,6 @@ app.post('/api/formats', async (req, res) => {
   }
 });
 
-// Entries Sync
 app.post('/api/entries', async (req, res) => {
   try {
     const entries = Array.isArray(req.body) ? req.body : [req.body];
@@ -121,5 +113,4 @@ app.post('/api/entries', async (req, res) => {
   }
 });
 
-// Export app for Vercel Serverless
 module.exports = app;
