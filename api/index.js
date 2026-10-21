@@ -294,45 +294,67 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, user });
     }
 
-    // Sync Formats
+    // Sync Formats (Preserves sharedWith array)
     if (action === 'syncFormats' || urlPath.includes('formats')) {
       const rawFormats = Array.isArray(body.formats || body) ? (body.formats || body) : [body];
       if (rawFormats.length === 0) return res.json({ success: true, count: 0 });
 
-      const bulkOps = rawFormats.filter(fmt => fmt && fmt.formatId).map(fmt => ({
-        updateOne: {
-          filter: { formatId: Number(fmt.formatId), userId: String(fmt.userId) },
-          update: { $set: { ...fmt, updatedAt: new Date() } },
-          upsert: true
+      const bulkOps = rawFormats.filter(fmt => fmt && fmt.formatId).map(fmt => {
+        const updateFields = {
+          formatId: Number(fmt.formatId),
+          userId: String(fmt.userId),
+          title: String(fmt.title),
+          isDefault: Boolean(fmt.isDefault),
+          updatedAt: new Date()
+        };
+        if (Array.isArray(fmt.sharedWith) && fmt.sharedWith.length > 0) {
+          updateFields.sharedWith = fmt.sharedWith;
+        } else if (Array.isArray(fmt.sharedWithEmails) && fmt.sharedWithEmails.length > 0) {
+          updateFields.sharedWith = fmt.sharedWithEmails;
         }
-      }));
+
+        return {
+          updateOne: {
+            filter: { formatId: Number(fmt.formatId), userId: String(fmt.userId) },
+            update: { $set: updateFields },
+            upsert: true
+          }
+        };
+      });
 
       if (bulkOps.length === 0) return res.json({ success: true, count: 0 });
       const result = await Format.bulkWrite(bulkOps);
       return res.json({ success: true, count: rawFormats.length, result });
     }
 
-    // Sync Entries
+    // Sync Entries (Preserves sharedWith array)
     if (action === 'syncEntries' || urlPath.includes('entries')) {
       const rawEntries = Array.isArray(body.entries || body) ? (body.entries || body) : [body];
       if (rawEntries.length === 0) return res.json({ success: true, count: 0 });
 
-      const bulkOps = rawEntries.map(ent => ({
-        updateOne: {
-          filter: { entryId: Number(ent.entryId), userId: String(ent.userId) },
-          update: {
-            $set: {
-              entryId: Number(ent.entryId),
-              formatId: Number(ent.formatId),
-              userId: String(ent.userId),
-              valuesJson: typeof ent.valuesJson === 'string' ? ent.valuesJson : JSON.stringify(ent.valuesJson || {}),
-              isCalled: Boolean(ent.isCalled),
-              updatedAt: new Date()
-            }
-          },
-          upsert: true
+      const bulkOps = rawEntries.map(ent => {
+        const updateFields = {
+          entryId: Number(ent.entryId),
+          formatId: Number(ent.formatId),
+          userId: String(ent.userId),
+          valuesJson: typeof ent.valuesJson === 'string' ? ent.valuesJson : JSON.stringify(ent.valuesJson || {}),
+          isCalled: Boolean(ent.isCalled),
+          updatedAt: new Date()
+        };
+        if (Array.isArray(ent.sharedWith) && ent.sharedWith.length > 0) {
+          updateFields.sharedWith = ent.sharedWith;
+        } else if (Array.isArray(ent.sharedWithEmails) && ent.sharedWithEmails.length > 0) {
+          updateFields.sharedWith = ent.sharedWithEmails;
         }
-      }));
+
+        return {
+          updateOne: {
+            filter: { entryId: Number(ent.entryId), userId: String(ent.userId) },
+            update: { $set: updateFields },
+            upsert: true
+          }
+        };
+      });
 
       const result = await Entry.bulkWrite(bulkOps);
       return res.json({ success: true, count: rawEntries.length, result });
