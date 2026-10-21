@@ -2,9 +2,9 @@
   "name": "my-school-mongodb-backend",
   "version": "1.0.0",
   "description": "MongoDB Atlas Backend for Student Directory App",
-  "main": "index.js",
+  "main": "api/index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node api/index.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

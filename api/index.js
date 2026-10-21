@@ -6,13 +6,40 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://rrajak8806_db_user:CLrNapjCVuipXpqz@cluster0.s3h68ti.mongodb.net/my_school_db";
+// Connection caching for Serverless environments
+let cachedConnection = null;
 
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log("Connected to MongoDB Atlas: my_school_db"))
-  .catch(err => console.error("MongoDB Connection Error:", err));
+async function connectToDatabase() {
+  if (cachedConnection && mongoose.connection.readyState === 1) {
+    return cachedConnection;
+  }
 
-// Schemas
+  const uri = process.env.MONGODB_URI || "mongodb+srv://rrajak8806_db_user:CLrNapjCVuipXpqz@cluster0.s3h68ti.mongodb.net/my_school_db";
+;
+  if (!uri) {
+    throw new Error("MONGODB_URI environment variable is not defined");
+  }
+
+  cachedConnection = await mongoose.connect(uri, {
+    bufferCommands: false,
+    serverSelectionTimeoutMS: 5000
+  });
+
+  return cachedConnection;
+}
+
+// Database connection middleware
+app.use(async (req, res, next) => {
+  try {
+    await connectToDatabase();
+    next();
+  } catch (err) {
+    console.error("MongoDB Connection Error:", err);
+    res.status(500).json({ success: false, error: "Database connection failed" });
+  }
+});
+
+// Schemas & Models
 const UserSchema = new mongoose.Schema({
   userId: { type: String, required: true, unique: true },
   displayName: String,
@@ -38,12 +65,12 @@ const EntrySchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
-const User = mongoose.model('User', UserSchema);
-const Format = mongoose.model('Format', FormatSchema);
-const Entry = mongoose.model('Entry', EntrySchema);
+const User = mongoose.models.User || mongoose.model('User', UserSchema);
+const Format = mongoose.models.Format || mongoose.model('Format', FormatSchema);
+const Entry = mongoose.models.Entry || mongoose.model('Entry', EntrySchema);
 
 // Ping / Health Check
-app.get('/', (req, res) => res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' }));
+app.get('/api', (req, res) => res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' }));
 
 // User Profile Sync
 app.post('/api/users', async (req, res) => {
@@ -94,5 +121,5 @@ app.post('/api/entries', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+// Export app for Vercel Serverless
+module.exports = app;
