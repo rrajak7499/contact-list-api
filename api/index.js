@@ -63,10 +63,10 @@ const User = mongoose.models.User || mongoose.model('User', UserSchema);
 const Format = mongoose.models.Format || mongoose.model('Format', FormatSchema);
 const Entry = mongoose.models.Entry || mongoose.model('Entry', EntrySchema);
 
-app.get('/', (req, res) => res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' }));
-app.get('/api', (req, res) => res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' }));
+app.get(['/', '/api'], (req, res) => res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' }));
 
-app.post('/api/users', async (req, res) => {
+// User Profile Sync (Supports both /users and /api/users)
+app.post(['/users', '/api/users'], async (req, res) => {
   try {
     const { userId, displayName, email, photoUrl } = req.body;
     if (!userId) return res.status(400).json({ success: false, error: "userId is required" });
@@ -81,7 +81,8 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-app.post('/api/formats', async (req, res) => {
+// Formats Sync (Supports both /formats and /api/formats)
+app.post(['/formats', '/api/formats'], async (req, res) => {
   try {
     const formats = Array.isArray(req.body) ? req.body : [req.body];
     for (const fmt of formats) {
@@ -97,7 +98,8 @@ app.post('/api/formats', async (req, res) => {
   }
 });
 
-app.post('/api/entries', async (req, res) => {
+// Entries Sync (Supports both /entries and /api/entries)
+app.post(['/entries', '/api/entries'], async (req, res) => {
   try {
     const entries = Array.isArray(req.body) ? req.body : [req.body];
     for (const ent of entries) {
