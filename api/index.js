@@ -14,14 +14,14 @@ if (!cached) {
 }
 
 async function connectDB() {
-  if (cached.conn && mongoose.connection.readyState === 1) {
+  if (cached.conn) {
     return cached.conn;
   }
 
   if (!cached.promise) {
     cached.promise = mongoose.connect(MONGODB_URI, {
       bufferCommands: false,
-      serverSelectionTimeoutMS: 10000
+      serverSelectionTimeoutMS: 8000
     }).then((mongooseInstance) => mongooseInstance);
   }
 
@@ -35,14 +35,13 @@ async function connectDB() {
   return cached.conn;
 }
 
-// Database Connection Middleware
 app.use(async (req, res, next) => {
   try {
     await connectDB();
     next();
   } catch (err) {
-    console.error("MongoDB Connection Error:", err);
-    res.status(500).json({ success: false, error: "Database connection error: " + err.message });
+    console.error("DB Connection Error:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -76,48 +75,17 @@ const User = mongoose.models.User || mongoose.model('User', UserSchema);
 const Format = mongoose.models.Format || mongoose.model('Format', FormatSchema);
 const Entry = mongoose.models.Entry || mongoose.model('Entry', EntrySchema);
 
-// Universal Master Handler for Vercel Serverless Function Routing
-app.all('*', async (req, res) => {
-  const method = req.method.toUpperCase();
-  const urlPath = req.path || req.url || '';
-  const body = req.body || {};
-  const query = req.query || {};
-  const action = body.action || query.action || '';
+app.get(['/', '/api'], (req, res) => res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' }));
 
-  // 1. HEALTH PING (GET / or GET /api)
-  if (method === 'GET' && (urlPath === '/' || urlPath === '/api' || action === 'ping')) {
-    return res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' });
-  }
+// Action Dispatching Handler
+app.post(['/', '/api', '/api/users', '/users', '/api/formats', '/formats', '/api/entries', '/entries'], async (req, res) => {
+  try {
+    const { action } = req.body;
+    const path = req.path || '';
 
-  // 2. READ / GET OPERATIONS
-  if (method === 'GET') {
-    if (urlPath.includes('formats') || action === 'getFormats') {
-      const userId = query.userId || body.userId;
-      if (!userId) return res.status(400).json({ success: false, error: "userId query parameter required" });
-      const formats = await Format.find({ $or: [{ userId }, { isDefault: true }] });
-      return res.json({ success: true, count: formats.length, formats });
-    }
-
-    if (urlPath.includes('entries') || action === 'getEntries') {
-      const userId = query.userId || body.userId;
-      if (!userId) return res.status(400).json({ success: false, error: "userId query parameter required" });
-      const entries = await Entry.find({ userId });
-      return res.json({ success: true, count: entries.length, entries });
-    }
-
-    if (urlPath.includes('users') || action === 'getUsers') {
-      const userId = query.userId || body.userId;
-      if (!userId) return res.status(400).json({ success: false, error: "userId query parameter required" });
-      const user = await User.findOne({ userId });
-      return res.json({ success: true, user });
-    }
-  }
-
-  // 3. CREATE & UPDATE (UPSERT) OPERATIONS
-  if (method === 'POST' || method === 'PUT') {
-    // Sync User Profile
-    if (action === 'syncUser' || urlPath.includes('users')) {
-      const { userId, displayName, email, photoUrl } = body;
+    // Handle User Sync
+    if (action === 'syncUser' || path.includes('users')) {
+      const { userId, displayName, email, photoUrl } = req.body;
       if (!userId) return res.status(400).json({ success: false, error: "userId is required" });
       const user = await User.findOneAndUpdate(
         { userId },
@@ -127,27 +95,24 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, user });
     }
 
-    // Sync Formats
-    if (action === 'syncFormats' || urlPath.includes('formats')) {
-      const rawFormats = Array.isArray(body.formats || body) ? (body.formats || body) : [body];
-      if (rawFormats.length === 0) return res.json({ success: true, count: 0 });
-
-      const bulkOps = rawFormats.filter(fmt => fmt && fmt.formatId).map(fmt => ({
-        updateOne: {
-          filter: { formatId: Number(fmt.formatId), userId: String(fmt.userId) },
-          update: { $set: { ...fmt, updatedAt: new Date() } },
-          upsert: true
+    // Handle Formats Sync
+    if (action === 'syncFormats' || path.includes('formats')) {
+      const rawFormats = Array.isArray(req.body.formats || req.body) ? (req.body.formats || req.body) : [req.body];
+      for (const fmt of rawFormats) {
+        if (fmt && fmt.formatId) {
+          await Format.findOneAndUpdate(
+            { formatId: fmt.formatId, userId: fmt.userId },
+            { ...fmt, updatedAt: new Date() },
+            { upsert: true }
+          );
         }
-      }));
-
-      if (bulkOps.length === 0) return res.json({ success: true, count: 0 });
-      const result = await Format.bulkWrite(bulkOps);
-      return res.json({ success: true, count: rawFormats.length, result });
+      }
+      return res.json({ success: true, count: rawFormats.length });
     }
 
-    // Sync Entries
-    if (action === 'syncEntries' || urlPath.includes('entries')) {
-      const rawEntries = Array.isArray(body.entries || body) ? (body.entries || body) : [body];
+    // Handle Entries Sync
+    if (action === 'syncEntries' || path.includes('entries')) {
+      const rawEntries = Array.isArray(req.body.entries || req.body) ? (req.body.entries || req.body) : [req.body];
       if (rawEntries.length === 0) return res.json({ success: true, count: 0 });
 
       const bulkOps = rawEntries.map(ent => ({
@@ -170,33 +135,12 @@ app.all('*', async (req, res) => {
       const result = await Entry.bulkWrite(bulkOps);
       return res.json({ success: true, count: rawEntries.length, result });
     }
+
+    res.status(400).json({ success: false, error: "Invalid action or route" });
+  } catch (err) {
+    console.error("API Error:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
-
-  // 4. USER-AUTHENTICATED DELETE OPERATIONS
-  if (method === 'DELETE' || action === 'deleteFormat' || action === 'deleteEntry') {
-    // Delete Format (Only for authenticated userId)
-    if (urlPath.includes('formats') || action === 'deleteFormat') {
-      const formatId = query.formatId || body.formatId;
-      const userId = query.userId || body.userId;
-      if (!userId || !formatId) return res.status(400).json({ success: false, error: "userId and formatId required" });
-
-      const deletedFormat = await Format.findOneAndDelete({ formatId: Number(formatId), userId: String(userId) });
-      await Entry.deleteMany({ formatId: Number(formatId), userId: String(userId) });
-      return res.json({ success: true, deleted: !!deletedFormat });
-    }
-
-    // Delete Entry (Only for authenticated userId)
-    if (urlPath.includes('entries') || action === 'deleteEntry') {
-      const entryId = query.entryId || body.entryId;
-      const userId = query.userId || body.userId;
-      if (!userId || !entryId) return res.status(400).json({ success: false, error: "userId and entryId required" });
-
-      const deletedEntry = await Entry.findOneAndDelete({ entryId: Number(entryId), userId: String(userId) });
-      return res.json({ success: true, deleted: !!deletedEntry });
-    }
-  }
-
-  return res.status(404).json({ success: false, error: `Unrecognized route or method: ${method} ${urlPath}` });
 });
 
 module.exports = app;
