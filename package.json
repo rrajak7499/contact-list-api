@@ -1,14 +1,13 @@
 ﻿{
-  "name": "my-school-mongodb-backend",
+  "name": "school-sync-backend",
   "version": "1.0.0",
-  "description": "MongoDB Atlas Backend for Student Directory App",
-  "main": "server.js",
+  "main": "api/server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node api/server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "mongoose": "^8.3.1"
+    "mongoose": "^8.3.0"
   }
 }
