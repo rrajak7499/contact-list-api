@@ -202,7 +202,7 @@ app.all('*', async (req, res) => {
     }
   }
 
-  // 4. CREATE, UPDATE & SHARING OPERATIONS
+  // 4. CREATE, UPDATE, SHARING & REVOCATION OPERATIONS
   if (method === 'POST' || method === 'PUT') {
     // Share Entire Format with Target Email
     if (action === 'shareFormat') {
@@ -221,7 +221,24 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, message: `Format and all entries shared with ${cleanEmail}` });
     }
 
-    // Share Single Contact Entry with Target Email
+    // Revoke Format Share
+    if (action === 'revokeFormatShare') {
+      const { formatId, userId, targetEmail } = body;
+      if (!formatId || !targetEmail) return res.status(400).json({ success: false, error: "formatId and targetEmail required" });
+
+      const cleanEmail = targetEmail.trim().toLowerCase();
+      await Format.updateOne(
+        { formatId: Number(formatId), userId: String(userId) },
+        { $pull: { sharedWith: cleanEmail } }
+      );
+      await Entry.updateMany(
+        { formatId: Number(formatId), userId: String(userId) },
+        { $pull: { sharedWith: cleanEmail } }
+      );
+      return res.json({ success: true, message: `Access revoked for ${cleanEmail}` });
+    }
+
+    // Share Single Contact Entry
     if (action === 'shareEntry') {
       const { entryId, userId, targetEmail } = body;
       if (!entryId || !targetEmail) return res.status(400).json({ success: false, error: "entryId and targetEmail required" });
@@ -232,6 +249,19 @@ app.all('*', async (req, res) => {
         { $addToSet: { sharedWith: cleanEmail } }
       );
       return res.json({ success: true, message: `Entry shared with ${cleanEmail}` });
+    }
+
+    // Revoke Entry Share
+    if (action === 'revokeEntryShare') {
+      const { entryId, userId, targetEmail } = body;
+      if (!entryId || !targetEmail) return res.status(400).json({ success: false, error: "entryId and targetEmail required" });
+
+      const cleanEmail = targetEmail.trim().toLowerCase();
+      await Entry.updateOne(
+        { entryId: Number(entryId), userId: String(userId) },
+        { $pull: { sharedWith: cleanEmail } }
+      );
+      return res.json({ success: true, message: `Access revoked for ${cleanEmail}` });
     }
 
     // Sync User Profile
