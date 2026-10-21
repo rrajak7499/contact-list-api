@@ -195,20 +195,18 @@ app.all('*', async (req, res) => {
   if (method === 'DELETE' || action === 'deleteFormat' || action === 'deleteEntry') {
     if (action === 'deleteFormat' || urlPath.includes('formats')) {
       const formatId = query.formatId || body.formatId;
-      const userId = query.userId || body.userId;
-      if (!userId || !formatId) return res.status(400).json({ success: false, error: "userId and formatId required" });
+      if (!formatId) return res.status(400).json({ success: false, error: "formatId required" });
 
-      const deletedFormat = await Format.findOneAndDelete({ formatId: Number(formatId), userId: String(userId) });
-      await Entry.deleteMany({ formatId: Number(formatId), userId: String(userId) });
+      const deletedFormat = await Format.findOneAndDelete({ formatId: Number(formatId) });
+      await Entry.deleteMany({ formatId: Number(formatId) });
       return res.json({ success: true, deleted: !!deletedFormat });
     }
 
     if (action === 'deleteEntry' || urlPath.includes('entries')) {
       const entryId = query.entryId || body.entryId;
-      const userId = query.userId || body.userId;
-      if (!userId || !entryId) return res.status(400).json({ success: false, error: "userId and entryId required" });
+      if (!entryId) return res.status(400).json({ success: false, error: "entryId required" });
 
-      const deletedEntry = await Entry.findOneAndDelete({ entryId: Number(entryId), userId: String(userId) });
+      const deletedEntry = await Entry.findOneAndDelete({ entryId: Number(entryId) });
       return res.json({ success: true, deleted: !!deletedEntry });
     }
   }
@@ -217,16 +215,16 @@ app.all('*', async (req, res) => {
   if (method === 'POST' || method === 'PUT') {
     // Share Entire Format with Target Email
     if (action === 'shareFormat') {
-      const { formatId, userId, targetEmail } = body;
+      const { formatId, targetEmail } = body;
       if (!formatId || !targetEmail) return res.status(400).json({ success: false, error: "formatId and targetEmail required" });
 
       const cleanEmail = targetEmail.trim().toLowerCase();
       await Format.updateOne(
-        { formatId: Number(formatId), userId: String(userId) },
+        { formatId: Number(formatId) },
         { $addToSet: { sharedWith: cleanEmail } }
       );
       await Entry.updateMany(
-        { formatId: Number(formatId), userId: String(userId) },
+        { formatId: Number(formatId) },
         { $addToSet: { sharedWith: cleanEmail } }
       );
       return res.json({ success: true, message: `Format and all entries shared with ${cleanEmail}` });
@@ -234,16 +232,16 @@ app.all('*', async (req, res) => {
 
     // Revoke Format Share
     if (action === 'revokeFormatShare') {
-      const { formatId, userId, targetEmail } = body;
+      const { formatId, targetEmail } = body;
       if (!formatId || !targetEmail) return res.status(400).json({ success: false, error: "formatId and targetEmail required" });
 
       const cleanEmail = targetEmail.trim().toLowerCase();
       await Format.updateOne(
-        { formatId: Number(formatId), userId: String(userId) },
+        { formatId: Number(formatId) },
         { $pull: { sharedWith: cleanEmail } }
       );
       await Entry.updateMany(
-        { formatId: Number(formatId), userId: String(userId) },
+        { formatId: Number(formatId) },
         { $pull: { sharedWith: cleanEmail } }
       );
       return res.json({ success: true, message: `Access revoked for ${cleanEmail}` });
@@ -251,11 +249,11 @@ app.all('*', async (req, res) => {
 
     // Share Single Contact Entry
     if (action === 'shareEntry') {
-      const { entryId, userId, targetEmail } = body;
+      const { entryId, targetEmail } = body;
       if (!entryId || !targetEmail) return res.status(400).json({ success: false, error: "entryId and targetEmail required" });
 
       const cleanEmail = targetEmail.trim().toLowerCase();
-      const targetEntry = await Entry.findOne({ entryId: Number(entryId), userId: String(userId) });
+      const targetEntry = await Entry.findOne({ entryId: Number(entryId) });
       if (targetEntry) {
         await Format.updateOne(
           { formatId: Number(targetEntry.formatId) },
@@ -263,7 +261,7 @@ app.all('*', async (req, res) => {
         );
       }
       await Entry.updateOne(
-        { entryId: Number(entryId), userId: String(userId) },
+        { entryId: Number(entryId) },
         { $addToSet: { sharedWith: cleanEmail } }
       );
       return res.json({ success: true, message: `Entry shared with ${cleanEmail}` });
@@ -271,12 +269,12 @@ app.all('*', async (req, res) => {
 
     // Revoke Entry Share
     if (action === 'revokeEntryShare') {
-      const { entryId, userId, targetEmail } = body;
+      const { entryId, targetEmail } = body;
       if (!entryId || !targetEmail) return res.status(400).json({ success: false, error: "entryId and targetEmail required" });
 
       const cleanEmail = targetEmail.trim().toLowerCase();
       await Entry.updateOne(
-        { entryId: Number(entryId), userId: String(userId) },
+        { entryId: Number(entryId) },
         { $pull: { sharedWith: cleanEmail } }
       );
       return res.json({ success: true, message: `Access revoked for ${cleanEmail}` });
