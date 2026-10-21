@@ -321,7 +321,7 @@ app.all('*', async (req, res) => {
 
         return {
           updateOne: {
-            filter: { formatId: Number(fmt.formatId), userId: String(fmt.userId) },
+            filter: { formatId: Number(fmt.formatId) },
             update: { $set: updateFields },
             upsert: true
           }
@@ -333,7 +333,7 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, count: rawFormats.length, result });
     }
 
-    // Sync Entries (Preserves sharedWith array)
+    // Sync Entries (Supports updating call status & remarks for shared entries)
     if (action === 'syncEntries' || urlPath.includes('entries')) {
       const rawEntries = Array.isArray(body.entries || body) ? (body.entries || body) : [body];
       if (rawEntries.length === 0) return res.json({ success: true, count: 0 });
@@ -343,10 +343,12 @@ app.all('*', async (req, res) => {
           entryId: Number(ent.entryId),
           formatId: Number(ent.formatId),
           userId: String(ent.userId),
-          valuesJson: typeof ent.valuesJson === 'string' ? ent.valuesJson : JSON.stringify(ent.valuesJson || {}),
           isCalled: Boolean(ent.isCalled),
           updatedAt: new Date()
         };
+        if (ent.valuesJson) {
+          updateFields.valuesJson = typeof ent.valuesJson === 'string' ? ent.valuesJson : JSON.stringify(ent.valuesJson);
+        }
         if (Array.isArray(ent.sharedWith) && ent.sharedWith.length > 0) {
           updateFields.sharedWith = ent.sharedWith;
         } else if (Array.isArray(ent.sharedWithEmails) && ent.sharedWithEmails.length > 0) {
@@ -355,7 +357,7 @@ app.all('*', async (req, res) => {
 
         return {
           updateOne: {
-            filter: { entryId: Number(ent.entryId), userId: String(ent.userId) },
+            filter: { entryId: Number(ent.entryId) },
             update: { $set: updateFields },
             upsert: true
           }
