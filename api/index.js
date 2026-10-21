@@ -8,7 +8,6 @@ app.use(express.json());
 
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://rrajak8806_db_user:CLrNapjCVuipXpqz@cluster0.s3h68ti.mongodb.net/my_school_db";
 
-// Serverless Mongoose connection caching
 let cached = global.mongoose;
 if (!cached) {
   cached = global.mongoose = { conn: null, promise: null };
@@ -76,79 +75,70 @@ const User = mongoose.models.User || mongoose.model('User', UserSchema);
 const Format = mongoose.models.Format || mongoose.model('Format', FormatSchema);
 const Entry = mongoose.models.Entry || mongoose.model('Entry', EntrySchema);
 
-// 1. Health Check
 app.get(['/', '/api'], (req, res) => res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' }));
 
-// 2. Sync Users Route
-app.post(['/users', '/api/users'], async (req, res) => {
+// Action Dispatching Handler
+app.post(['/', '/api', '/api/users', '/users', '/api/formats', '/formats', '/api/entries', '/entries'], async (req, res) => {
   try {
-    const { userId, displayName, email, photoUrl } = req.body;
-    if (!userId) return res.status(400).json({ success: false, error: "userId is required" });
-    const user = await User.findOneAndUpdate(
-      { userId },
-      { displayName, email, photoUrl, updatedAt: new Date() },
-      { upsert: true, new: true }
-    );
-    res.json({ success: true, user });
-  } catch (err) {
-    console.error("User sync error:", err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+    const { action } = req.body;
+    const path = req.path || '';
 
-// 3. Sync Formats Route
-app.post(['/formats', '/api/formats'], async (req, res) => {
-  try {
-    const rawFormats = Array.isArray(req.body) ? req.body : [req.body];
-    if (rawFormats.length === 0) return res.json({ success: true, count: 0 });
+    // Handle User Sync
+    if (action === 'syncUser' || path.includes('users')) {
+      const { userId, displayName, email, photoUrl } = req.body;
+      if (!userId) return res.status(400).json({ success: false, error: "userId is required" });
+      const user = await User.findOneAndUpdate(
+        { userId },
+        { displayName, email, photoUrl, updatedAt: new Date() },
+        { upsert: true, new: true }
+      );
+      return res.json({ success: true, user });
+    }
 
-    const bulkOps = rawFormats.map(fmt => ({
-      updateOne: {
-        filter: { formatId: Number(fmt.formatId), userId: String(fmt.userId) },
-        update: { $set: { ...fmt, updatedAt: new Date() } },
-        upsert: true
+    // Handle Formats Sync
+    if (action === 'syncFormats' || path.includes('formats')) {
+      const rawFormats = Array.isArray(req.body.formats || req.body) ? (req.body.formats || req.body) : [req.body];
+      for (const fmt of rawFormats) {
+        if (fmt && fmt.formatId) {
+          await Format.findOneAndUpdate(
+            { formatId: fmt.formatId, userId: fmt.userId },
+            { ...fmt, updatedAt: new Date() },
+            { upsert: true }
+          );
+        }
       }
-    }));
-    const result = await Format.bulkWrite(bulkOps);
-    res.json({ success: true, count: rawFormats.length, result });
+      return res.json({ success: true, count: rawFormats.length });
+    }
+
+    // Handle Entries Sync
+    if (action === 'syncEntries' || path.includes('entries')) {
+      const rawEntries = Array.isArray(req.body.entries || req.body) ? (req.body.entries || req.body) : [req.body];
+      if (rawEntries.length === 0) return res.json({ success: true, count: 0 });
+
+      const bulkOps = rawEntries.map(ent => ({
+        updateOne: {
+          filter: { entryId: Number(ent.entryId), userId: String(ent.userId) },
+          update: {
+            $set: {
+              entryId: Number(ent.entryId),
+              formatId: Number(ent.formatId),
+              userId: String(ent.userId),
+              valuesJson: typeof ent.valuesJson === 'string' ? ent.valuesJson : JSON.stringify(ent.valuesJson || {}),
+              isCalled: Boolean(ent.isCalled),
+              updatedAt: new Date()
+            }
+          },
+          upsert: true
+        }
+      }));
+
+      const result = await Entry.bulkWrite(bulkOps);
+      return res.json({ success: true, count: rawEntries.length, result });
+    }
+
+    res.status(400).json({ success: false, error: "Invalid action or route" });
   } catch (err) {
-    console.error("Formats sync error:", err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// 4. Sync Entries Route
-app.post(['/entries', '/api/entries'], async (req, res) => {
-  try {
-    const rawEntries = Array.isArray(req.body) ? req.body : [req.body];
-    if (rawEntries.length === 0) return res.json({ success: true, count: 0 });
-
-    const bulkOps = rawEntries.map(ent => ({
-      updateOne: {
-        filter: { entryId: Number(ent.entryId), userId: String(ent.userId) },
-        update: {
-          $set: {
-            entryId: Number(ent.entryId),
-            formatId: Number(ent.formatId),
-            userId: String(ent.userId),
-            valuesJson: typeof ent.valuesJson === 'string' ? ent.valuesJson : JSON.stringify(ent.valuesJson || {}),
-            isCalled: Boolean(ent.isCalled),
-            updatedAt: new Date()
-          }
-        },
-        upsert: true
-      }
-    }));
-
-    const result = await Entry.bulkWrite(bulkOps);
-    res.json({
-      success: true,
-      count: rawEntries.length,
-      upserted: result.upsertedCount,
-      modified: result.modifiedCount
-    });
-  } catch (err) {
-    console.error("Entries sync error:", err);
+    console.error("API Error:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
