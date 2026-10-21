@@ -8,20 +8,32 @@ app.use(express.json());
 
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://rrajak8806_db_user:CLrNapjCVuipXpqz@cluster0.s3h68ti.mongodb.net/my_school_db";
 
-let isConnected = false;
+// 1. Maintain a cached connection promise across serverless warm starts
+let cached = global.mongoose;
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
 
 async function connectDB() {
-  if (isConnected && mongoose.connection.readyState === 1) return;
-  try {
-    await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 10000
-    });
-    isConnected = true;
-    console.log("Connected to MongoDB Atlas: my_school_db");
-  } catch (err) {
-    console.error("MongoDB Connection Error:", err);
-    throw err;
+  if (cached.conn) {
+    return cached.conn;
   }
+
+  if (!cached.promise) {
+    cached.promise = mongoose.connect(MONGODB_URI, {
+      bufferCommands: false, // Prevent silent hanging in serverless functions
+      serverSelectionTimeoutMS: 8000
+    }).then((mongooseInstance) => mongooseInstance);
+  }
+
+  try {
+    cached.conn = await cached.promise;
+  } catch (e) {
+    cached.promise = null;
+    throw e;
+  }
+
+  return cached.conn;
 }
 
 app.use(async (req, res, next) => {
@@ -29,6 +41,7 @@ app.use(async (req, res, next) => {
     await connectDB();
     next();
   } catch (err) {
+    console.error("DB Connection Error:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -65,52 +78,47 @@ const Entry = mongoose.models.Entry || mongoose.model('Entry', EntrySchema);
 
 app.get(['/', '/api'], (req, res) => res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' }));
 
-// User Profile Sync (Supports both /users and /api/users)
-app.post(['/users', '/api/users'], async (req, res) => {
-  try {
-    const { userId, displayName, email, photoUrl } = req.body;
-    if (!userId) return res.status(400).json({ success: false, error: "userId is required" });
-    const user = await User.findOneAndUpdate(
-      { userId },
-      { displayName, email, photoUrl, updatedAt: new Date() },
-      { upsert: true, new: true }
-    );
-    res.json({ success: true, user });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Formats Sync (Supports both /formats and /api/formats)
-app.post(['/formats', '/api/formats'], async (req, res) => {
-  try {
-    const formats = Array.isArray(req.body) ? req.body : [req.body];
-    for (const fmt of formats) {
-      await Format.findOneAndUpdate(
-        { formatId: fmt.formatId, userId: fmt.userId },
-        { ...fmt, updatedAt: new Date() },
-        { upsert: true }
-      );
-    }
-    res.json({ success: true, count: formats.length });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Entries Sync (Supports both /entries and /api/entries)
+// Atomic Bulk Upsert for Entries
 app.post(['/entries', '/api/entries'], async (req, res) => {
   try {
-    const entries = Array.isArray(req.body) ? req.body : [req.body];
-    for (const ent of entries) {
-      await Entry.findOneAndUpdate(
-        { entryId: ent.entryId, userId: ent.userId },
-        { ...ent, updatedAt: new Date() },
-        { upsert: true }
-      );
+    const rawEntries = Array.isArray(req.body) ? req.body : [req.body];
+    
+    // Log the payload to Vercel Runtime Logs for verification
+    console.log("Received entries count:", rawEntries.length);
+
+    if (rawEntries.length === 0) {
+      return res.json({ success: true, count: 0 });
     }
-    res.json({ success: true, count: entries.length });
+
+    const bulkOps = rawEntries.map(ent => ({
+      updateOne: {
+        filter: { 
+          entryId: Number(ent.entryId), 
+          userId: String(ent.userId) 
+        },
+        update: { 
+          $set: {
+            entryId: Number(ent.entryId),
+            formatId: Number(ent.formatId),
+            userId: String(ent.userId),
+            valuesJson: typeof ent.valuesJson === 'string' ? ent.valuesJson : JSON.stringify(ent.valuesJson || {}),
+            isCalled: Boolean(ent.isCalled),
+            updatedAt: new Date()
+          } 
+        },
+        upsert: true
+      }
+    }));
+
+    const result = await Entry.bulkWrite(bulkOps);
+    res.json({ 
+      success: true, 
+      count: rawEntries.length, 
+      upserted: result.upsertedCount, 
+      modified: result.modifiedCount 
+    });
   } catch (err) {
+    console.error("Entries sync error:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
