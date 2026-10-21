@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 
@@ -77,68 +77,121 @@ const Entry = mongoose.models.Entry || mongoose.model('Entry', EntrySchema);
 
 app.get(['/', '/api'], (req, res) => res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' }));
 
-// Action Dispatching Handler
-app.post(['/', '/api', '/api/users', '/users', '/api/formats', '/formats', '/api/entries', '/entries'], async (req, res) => {
+// User Profile Sync
+app.post(['/users', '/api/users'], async (req, res) => {
   try {
-    const { action } = req.body;
-    const path = req.path || '';
-
-    // Handle User Sync
-    if (action === 'syncUser' || path.includes('users')) {
-      const { userId, displayName, email, photoUrl } = req.body;
-      if (!userId) return res.status(400).json({ success: false, error: "userId is required" });
-      const user = await User.findOneAndUpdate(
-        { userId },
-        { displayName, email, photoUrl, updatedAt: new Date() },
-        { upsert: true, new: true }
-      );
-      return res.json({ success: true, user });
-    }
-
-    // Handle Formats Sync
-    if (action === 'syncFormats' || path.includes('formats')) {
-      const rawFormats = Array.isArray(req.body.formats || req.body) ? (req.body.formats || req.body) : [req.body];
-      for (const fmt of rawFormats) {
-        if (fmt && fmt.formatId) {
-          await Format.findOneAndUpdate(
-            { formatId: fmt.formatId, userId: fmt.userId },
-            { ...fmt, updatedAt: new Date() },
-            { upsert: true }
-          );
-        }
-      }
-      return res.json({ success: true, count: rawFormats.length });
-    }
-
-    // Handle Entries Sync
-    if (action === 'syncEntries' || path.includes('entries')) {
-      const rawEntries = Array.isArray(req.body.entries || req.body) ? (req.body.entries || req.body) : [req.body];
-      if (rawEntries.length === 0) return res.json({ success: true, count: 0 });
-
-      const bulkOps = rawEntries.map(ent => ({
-        updateOne: {
-          filter: { entryId: Number(ent.entryId), userId: String(ent.userId) },
-          update: {
-            $set: {
-              entryId: Number(ent.entryId),
-              formatId: Number(ent.formatId),
-              userId: String(ent.userId),
-              valuesJson: typeof ent.valuesJson === 'string' ? ent.valuesJson : JSON.stringify(ent.valuesJson || {}),
-              isCalled: Boolean(ent.isCalled),
-              updatedAt: new Date()
-            }
-          },
-          upsert: true
-        }
-      }));
-
-      const result = await Entry.bulkWrite(bulkOps);
-      return res.json({ success: true, count: rawEntries.length, result });
-    }
-
-    res.status(400).json({ success: false, error: "Invalid action or route" });
+    const { userId, displayName, email, photoUrl } = req.body;
+    if (!userId) return res.status(400).json({ success: false, error: "userId is required" });
+    const user = await User.findOneAndUpdate(
+      { userId },
+      { displayName, email, photoUrl, updatedAt: new Date() },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true, user });
   } catch (err) {
-    console.error("API Error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET Formats by User ID
+app.get(['/formats', '/api/formats'], async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ success: false, error: "userId query param required" });
+    const formats = await Format.find({ $or: [{ userId }, { isDefault: true }] });
+    res.json(formats);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Sync Formats
+app.post(['/formats', '/api/formats'], async (req, res) => {
+  try {
+    const rawFormats = Array.isArray(req.body.formats || req.body) ? (req.body.formats || req.body) : [req.body];
+    for (const fmt of rawFormats) {
+      if (fmt && fmt.formatId) {
+        await Format.findOneAndUpdate(
+          { formatId: fmt.formatId, userId: fmt.userId },
+          { ...fmt, updatedAt: new Date() },
+          { upsert: true }
+        );
+      }
+    }
+    res.json({ success: true, count: rawFormats.length });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE Format by User ID
+app.delete(['/formats/:formatId', '/api/formats/:formatId'], async (req, res) => {
+  try {
+    const { formatId } = req.params;
+    const { userId } = req.query;
+    if (!userId) return res.status(401).json({ success: false, error: "Unauthorized. userId required" });
+
+    const deletedFormat = await Format.findOneAndDelete({ formatId: Number(formatId), userId });
+    await Entry.deleteMany({ formatId: Number(formatId), userId });
+
+    res.json({ success: true, deleted: !!deletedFormat });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET Entries by User ID
+app.get(['/entries', '/api/entries'], async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ success: false, error: "userId query param required" });
+    const entries = await Entry.find({ userId });
+    res.json(entries);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Sync Entries
+app.post(['/entries', '/api/entries'], async (req, res) => {
+  try {
+    const rawEntries = Array.isArray(req.body.entries || req.body) ? (req.body.entries || req.body) : [req.body];
+    if (rawEntries.length === 0) return res.json({ success: true, count: 0 });
+
+    const bulkOps = rawEntries.map(ent => ({
+      updateOne: {
+        filter: { entryId: Number(ent.entryId), userId: String(ent.userId) },
+        update: {
+          $set: {
+            entryId: Number(ent.entryId),
+            formatId: Number(ent.formatId),
+            userId: String(ent.userId),
+            valuesJson: typeof ent.valuesJson === 'string' ? ent.valuesJson : JSON.stringify(ent.valuesJson || {}),
+            isCalled: Boolean(ent.isCalled),
+            updatedAt: new Date()
+          }
+        },
+        upsert: true
+      }
+    }));
+
+    const result = await Entry.bulkWrite(bulkOps);
+    res.json({ success: true, count: rawEntries.length, result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE Entry by User ID
+app.delete(['/entries/:entryId', '/api/entries/:entryId'], async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    const { userId } = req.query;
+    if (!userId) return res.status(401).json({ success: false, error: "Unauthorized. userId required" });
+
+    const deletedEntry = await Entry.findOneAndDelete({ entryId: Number(entryId), userId });
+    res.json({ success: true, deleted: !!deletedEntry });
+  } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
