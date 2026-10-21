@@ -1,7 +1,6 @@
 ﻿{
   "name": "my-school-mongodb-backend",
   "version": "1.0.0",
-  "description": "MongoDB Atlas Backend for Student Directory App",
   "main": "api/index.js",
   "scripts": {
     "start": "node api/index.js"
