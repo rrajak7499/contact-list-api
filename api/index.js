@@ -105,7 +105,7 @@ app.all('*', async (req, res) => {
   const query = req.query || {};
   const action = body.action || query.action || '';
 
-  // 1. HEALTH PING (Only when explicitly ping or no action/path specified)
+  // 1. HEALTH PING
   if (method === 'GET' && action === 'ping') {
     return res.json({ status: 'active', database: 'MongoDB Atlas: my_school_db' });
   }
@@ -140,13 +140,24 @@ app.all('*', async (req, res) => {
       return res.json(aboutData);
     }
 
+    // GET SHARED FORMATS (Includes formats explicitly shared OR formats containing shared entries)
     if (action === 'getSharedFormats') {
       const email = query.email || query.userId || body.email || body.userId;
       if (!email) return res.status(400).json({ success: false, error: "email parameter required" });
-      const sharedFormats = await Format.find({ sharedWith: email });
+
+      const sharedEntries = await Entry.find({ sharedWith: email });
+      const sharedFormatIds = sharedEntries.map(e => e.formatId);
+
+      const sharedFormats = await Format.find({
+        $or: [
+          { sharedWith: email },
+          { formatId: { $in: sharedFormatIds } }
+        ]
+      });
       return res.json({ success: true, count: sharedFormats.length, formats: sharedFormats });
     }
 
+    // GET SHARED ENTRIES
     if (action === 'getSharedEntries') {
       const email = query.email || query.userId || body.email || body.userId;
       if (!email) return res.status(400).json({ success: false, error: "email parameter required" });
@@ -244,6 +255,13 @@ app.all('*', async (req, res) => {
       if (!entryId || !targetEmail) return res.status(400).json({ success: false, error: "entryId and targetEmail required" });
 
       const cleanEmail = targetEmail.trim().toLowerCase();
+      const targetEntry = await Entry.findOne({ entryId: Number(entryId), userId: String(userId) });
+      if (targetEntry) {
+        await Format.updateOne(
+          { formatId: Number(targetEntry.formatId) },
+          { $addToSet: { sharedWith: cleanEmail } }
+        );
+      }
       await Entry.updateOne(
         { entryId: Number(entryId), userId: String(userId) },
         { $addToSet: { sharedWith: cleanEmail } }
