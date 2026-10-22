@@ -142,11 +142,11 @@ app.all('*', async (req, res) => {
 
     // GET SHARED FORMATS (Includes formats explicitly shared OR formats containing shared entries)
     if (action === 'getSharedFormats') {
-      const email = query.email || query.userId || body.email || body.userId;
+      const email = (query.email || query.userId || body.email || body.userId || '').toLowerCase().trim();
       if (!email) return res.status(400).json({ success: false, error: "email parameter required" });
 
       const sharedEntries = await Entry.find({ sharedWith: email });
-      const sharedFormatIds = sharedEntries.map(e => e.formatId);
+      const sharedFormatIds = sharedEntries.map(e => Number(e.formatId));
 
       const sharedFormats = await Format.find({
         $or: [
@@ -159,7 +159,7 @@ app.all('*', async (req, res) => {
 
     // GET SHARED ENTRIES
     if (action === 'getSharedEntries') {
-      const email = query.email || query.userId || body.email || body.userId;
+      const email = (query.email || query.userId || body.email || body.userId || '').toLowerCase().trim();
       if (!email) return res.status(400).json({ success: false, error: "email parameter required" });
       const sharedEntries = await Entry.find({ sharedWith: email });
       return res.json({ success: true, count: sharedEntries.length, entries: sharedEntries });
@@ -232,7 +232,7 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, message: `Format and all entries shared with ${cleanEmail}` });
     }
 
-    // Revoke Format Share
+    // Revoke Format Share (Also revokes access from ALL entries under that format)
     if (action === 'revokeFormatShare') {
       const { formatId, targetEmail } = body;
       if (formatId === undefined || formatId === null || !targetEmail) {
@@ -273,7 +273,7 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, message: `Entry shared with ${cleanEmail}` });
     }
 
-    // Revoke Entry Share
+    // Revoke Entry Share (Also revokes Format share if recipient has 0 remaining shared entries in this format)
     if (action === 'revokeEntryShare') {
       const { entryId, targetEmail } = body;
       if (entryId === undefined || entryId === null || !targetEmail) {
@@ -281,11 +281,28 @@ app.all('*', async (req, res) => {
       }
 
       const cleanEmail = targetEmail.trim().toLowerCase();
+      const targetEntry = await Entry.findOne({ entryId: Number(entryId) });
+
       await Entry.updateOne(
         { entryId: Number(entryId) },
         { $pull: { sharedWith: cleanEmail } }
       );
-      return res.json({ success: true, message: `Access revoked for ${cleanEmail}` });
+
+      if (targetEntry) {
+        const remainingEntriesCount = await Entry.countDocuments({
+          formatId: Number(targetEntry.formatId),
+          sharedWith: cleanEmail
+        });
+
+        if (remainingEntriesCount === 0) {
+          await Format.updateOne(
+            { formatId: Number(targetEntry.formatId) },
+            { $pull: { sharedWith: cleanEmail } }
+          );
+        }
+      }
+
+      return res.json({ success: true, message: `Entry access revoked for ${cleanEmail}` });
     }
 
     // Sync User Profile
