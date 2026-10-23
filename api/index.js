@@ -86,9 +86,14 @@ const AboutSchema = new mongoose.Schema({
 const AnnouncementSchema = new mongoose.Schema({
   enabled: { type: Boolean, default: false },
   title: { type: String, default: "📢 System Announcement" },
-  message: { type: String, default: "Welcome to Student Directory!" },
+  message: { type: String, default: "Welcome to Contact Directory!" },
   buttonText: { type: String, default: "Got It" },
-  actionUrl: { type: String, default: "" }
+  actionUrl: { type: String, default: "" },
+  minAppVersion: { type: Number, default: 1 },
+  latestAppVersion: { type: Number, default: 1 },
+  forceUpdate: { type: Boolean, default: false },
+  updateUrl: { type: String, default: "https://rrajak7499.github.io/contact-directory/" },
+  updatedAt: { type: Date, default: Date.now }
 });
 
 const User = mongoose.models.User || mongoose.model('User', UserSchema);
@@ -118,17 +123,25 @@ app.all('*', async (req, res) => {
         announcementData = await Announcement.create({
           enabled: false,
           title: "📢 System Announcement",
-          message: "Welcome to Student Directory!",
+          message: "Welcome to Contact Directory!",
           buttonText: "Got It",
-          actionUrl: ""
+          actionUrl: "",
+          minAppVersion: 1,
+          latestAppVersion: 1,
+          forceUpdate: false,
+          updateUrl: "https://rrajak7499.github.io/contact-directory/"
         });
       }
       return res.json({
         enabled: Boolean(announcementData.enabled),
         title: announcementData.title || "📢 System Announcement",
-        message: announcementData.message || "Welcome to Student Directory!",
+        message: announcementData.message || "Welcome to Contact Directory!",
         buttonText: announcementData.buttonText || "Got It",
-        actionUrl: announcementData.actionUrl || ""
+        actionUrl: announcementData.actionUrl || "",
+        minAppVersion: announcementData.minAppVersion || 1,
+        latestAppVersion: announcementData.latestAppVersion || 1,
+        forceUpdate: Boolean(announcementData.forceUpdate),
+        updateUrl: announcementData.updateUrl || "https://rrajak7499.github.io/contact-directory/"
       });
     }
 
