@@ -83,14 +83,17 @@ const AboutSchema = new mongoose.Schema({
   donateUs: { type: String, default: "caneraupi@ybl" }
 });
 
+// Announcement Schema with Flexible Types for minAppVersion (Supports both "1.0.1" String and 2 Number!)
 const AnnouncementSchema = new mongoose.Schema({
   enabled: { type: Boolean, default: false },
   title: { type: String, default: "📢 System Announcement" },
   message: { type: String, default: "Welcome to Contact Directory!" },
   buttonText: { type: String, default: "Got It" },
   actionUrl: { type: String, default: "" },
-  minAppVersion: { type: Number, default: 1 },
-  latestAppVersion: { type: Number, default: 1 },
+  minAppVersion: { type: mongoose.Schema.Types.Mixed, default: "1.0.0" },
+  minVersionName: { type: String, default: "1.0.0" },
+  latestAppVersion: { type: mongoose.Schema.Types.Mixed, default: "1.0.0" },
+  latestVersionName: { type: String, default: "1.0.0" },
   forceUpdate: { type: Boolean, default: false },
   updateUrl: { type: String, default: "https://rrajak7499.github.io/contact-directory/" },
   updatedAt: { type: Date, default: Date.now }
@@ -128,12 +131,18 @@ app.all('*', async (req, res) => {
           message: "Welcome to Contact Directory!",
           buttonText: "Got It",
           actionUrl: "",
-          minAppVersion: 1,
-          latestAppVersion: 1,
+          minAppVersion: "1.0.0",
+          minVersionName: "1.0.0",
+          latestAppVersion: "1.0.0",
+          latestVersionName: "1.0.0",
           forceUpdate: false,
           updateUrl: "https://rrajak7499.github.io/contact-directory/"
         });
       }
+
+      const rawMin = announcementData.minAppVersion || announcementData.minVersionName || "1.0.0";
+      const minVersionStr = String(rawMin);
+      const minVersionInt = parseInt(minVersionStr, 10) || 1;
 
       return res.json({
         enabled: Boolean(announcementData.enabled),
@@ -141,8 +150,10 @@ app.all('*', async (req, res) => {
         message: announcementData.message || "Welcome to Contact Directory!",
         buttonText: announcementData.buttonText || "Got It",
         actionUrl: announcementData.actionUrl || "",
-        minAppVersion: Number(announcementData.minAppVersion) || 1,
+        minAppVersion: minVersionInt,
+        minVersionName: minVersionStr,
         latestAppVersion: Number(announcementData.latestAppVersion) || 1,
+        latestVersionName: String(announcementData.latestVersionName || announcementData.latestAppVersion || "1.0.0"),
         forceUpdate: Boolean(announcementData.forceUpdate),
         updateUrl: announcementData.updateUrl || announcementData.actionUrl || "https://rrajak7499.github.io/contact-directory/"
       });
