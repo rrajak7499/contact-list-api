@@ -83,7 +83,7 @@ const AboutSchema = new mongoose.Schema({
   donateUs: { type: String, default: "caneraupi@ybl" }
 });
 
-// Announcement Schema with Flexible Types for minAppVersion (Supports both "1.0.1" String and 2 Number!)
+// Announcement Schema with Flexible Types for minAppVersion
 const AnnouncementSchema = new mongoose.Schema({
   enabled: { type: Boolean, default: false },
   title: { type: String, default: "📢 System Announcement" },
@@ -121,8 +121,18 @@ app.all('*', async (req, res) => {
   // 2. READ OPERATIONS
   if (method === 'GET') {
     if (action === 'getAnnouncement' || urlPath.includes('announcement')) {
-      // Fetch the LATEST announcement document sorted by _id DESC
-      let announcementData = await Announcement.findOne({}).sort({ _id: -1 });
+      // Priority Query: Find the latest document that has enabled: true OR forceUpdate: true
+      let announcementData = await Announcement.findOne({
+        $or: [
+          { forceUpdate: true },
+          { enabled: true }
+        ]
+      }).sort({ _id: -1 });
+
+      // Fallback: If no active or forced document is found, select the latest document
+      if (!announcementData) {
+        announcementData = await Announcement.findOne({}).sort({ _id: -1 });
+      }
 
       if (!announcementData) {
         announcementData = await Announcement.create({
