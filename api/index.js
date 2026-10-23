@@ -203,17 +203,36 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, count: sharedEntries.length, entries: sharedEntries });
     }
 
+    // GET OWNED & SHARED FORMATS (Matches by userId OR email for full restore after app reinstall!)
     if (urlPath.includes('formats') || action === 'getFormats') {
-      const userId = query.userId || body.userId;
-      if (!userId) return res.status(400).json({ success: false, error: "userId query parameter required" });
-      const formats = await Format.find({ $or: [{ userId }, { isDefault: true }] });
+      const userId = (query.userId || body.userId || '').trim();
+      const email = (query.email || body.email || userId).toLowerCase().trim();
+      if (!userId && !email) return res.status(400).json({ success: false, error: "userId or email query parameter required" });
+
+      const formats = await Format.find({
+        $or: [
+          { userId: userId },
+          { userId: email },
+          { sharedWith: email },
+          { isDefault: true }
+        ]
+      });
       return res.json({ success: true, count: formats.length, formats });
     }
 
+    // GET OWNED & SHARED ENTRIES (Matches by userId OR email for full restore after app reinstall!)
     if (urlPath.includes('entries') || action === 'getEntries') {
-      const userId = query.userId || body.userId;
-      if (!userId) return res.status(400).json({ success: false, error: "userId query parameter required" });
-      const entries = await Entry.find({ userId });
+      const userId = (query.userId || body.userId || '').trim();
+      const email = (query.email || body.email || userId).toLowerCase().trim();
+      if (!userId && !email) return res.status(400).json({ success: false, error: "userId or email query parameter required" });
+
+      const entries = await Entry.find({
+        $or: [
+          { userId: userId },
+          { userId: email },
+          { sharedWith: email }
+        ]
+      });
       return res.json({ success: true, count: entries.length, entries });
     }
 
@@ -428,3 +447,9 @@ app.all('*', async (req, res) => {
 });
 
 module.exports = app;
+
+
+
+// git add .
+// git commit -m "sldfasdjf;as"
+// git push origin main
