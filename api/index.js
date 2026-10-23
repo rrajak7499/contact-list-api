@@ -118,7 +118,8 @@ app.all('*', async (req, res) => {
   // 2. READ OPERATIONS
   if (method === 'GET') {
     if (action === 'getAnnouncement' || urlPath.includes('announcement')) {
-      let announcementData = await Announcement.findOne();
+      // Find the latest announcement document sorted by _id DESC!
+      let announcementData = await Announcement.findOne().sort({ _id: -1 });
       if (!announcementData) {
         announcementData = await Announcement.create({
           enabled: false,
