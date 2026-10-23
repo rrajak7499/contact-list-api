@@ -118,18 +118,8 @@ app.all('*', async (req, res) => {
   // 2. READ OPERATIONS
   if (method === 'GET') {
     if (action === 'getAnnouncement' || urlPath.includes('announcement')) {
-      // Priority #1: Check for mandatory forceUpdate document first
-      let announcementData = await Announcement.findOne({ forceUpdate: true }).sort({ _id: -1 });
-
-      // Priority #2: Check for enabled announcement document if no forceUpdate
-      if (!announcementData) {
-        announcementData = await Announcement.findOne({ enabled: true }).sort({ _id: -1 });
-      }
-
-      // Priority #3: Fallback to latest document
-      if (!announcementData) {
-        announcementData = await Announcement.findOne({}).sort({ _id: -1 });
-      }
+      // Fetch the LATEST announcement document sorted by _id DESC
+      let announcementData = await Announcement.findOne({}).sort({ _id: -1 });
 
       if (!announcementData) {
         announcementData = await Announcement.create({
