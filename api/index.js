@@ -118,8 +118,19 @@ app.all('*', async (req, res) => {
   // 2. READ OPERATIONS
   if (method === 'GET') {
     if (action === 'getAnnouncement' || urlPath.includes('announcement')) {
-      // Find the latest announcement document sorted by _id DESC!
-      let announcementData = await Announcement.findOne().sort({ _id: -1 });
+      // Priority #1: Check for mandatory forceUpdate document first
+      let announcementData = await Announcement.findOne({ forceUpdate: true }).sort({ _id: -1 });
+
+      // Priority #2: Check for enabled announcement document if no forceUpdate
+      if (!announcementData) {
+        announcementData = await Announcement.findOne({ enabled: true }).sort({ _id: -1 });
+      }
+
+      // Priority #3: Fallback to latest document
+      if (!announcementData) {
+        announcementData = await Announcement.findOne({}).sort({ _id: -1 });
+      }
+
       if (!announcementData) {
         announcementData = await Announcement.create({
           enabled: false,
@@ -133,16 +144,17 @@ app.all('*', async (req, res) => {
           updateUrl: "https://rrajak7499.github.io/contact-directory/"
         });
       }
+
       return res.json({
         enabled: Boolean(announcementData.enabled),
         title: announcementData.title || "📢 System Announcement",
         message: announcementData.message || "Welcome to Contact Directory!",
         buttonText: announcementData.buttonText || "Got It",
         actionUrl: announcementData.actionUrl || "",
-        minAppVersion: announcementData.minAppVersion || 1,
-        latestAppVersion: announcementData.latestAppVersion || 1,
+        minAppVersion: Number(announcementData.minAppVersion) || 1,
+        latestAppVersion: Number(announcementData.latestAppVersion) || 1,
         forceUpdate: Boolean(announcementData.forceUpdate),
-        updateUrl: announcementData.updateUrl || "https://rrajak7499.github.io/contact-directory/"
+        updateUrl: announcementData.updateUrl || announcementData.actionUrl || "https://rrajak7499.github.io/contact-directory/"
       });
     }
 
