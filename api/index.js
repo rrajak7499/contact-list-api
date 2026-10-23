@@ -83,11 +83,11 @@ const AboutSchema = new mongoose.Schema({
   donateUs: { type: String, default: "caneraupi@ybl" }
 });
 
-// Announcement Schema with Flexible Types for minAppVersion
+// Announcement Schema
 const AnnouncementSchema = new mongoose.Schema({
   enabled: { type: Boolean, default: false },
-  title: { type: String, default: "📢 System Announcement" },
-  message: { type: String, default: "Welcome to Contact Directory!" },
+  title: { type: String, default: "" },
+  message: { type: String, default: "" },
   buttonText: { type: String, default: "Got It" },
   actionUrl: { type: String, default: "" },
   minAppVersion: { type: mongoose.Schema.Types.Mixed, default: "1.0.0" },
@@ -95,7 +95,7 @@ const AnnouncementSchema = new mongoose.Schema({
   latestAppVersion: { type: mongoose.Schema.Types.Mixed, default: "1.0.0" },
   latestVersionName: { type: String, default: "1.0.0" },
   forceUpdate: { type: Boolean, default: false },
-  updateUrl: { type: String, default: "https://rrajak7499.github.io/contact-directory/" },
+  updateUrl: { type: String, default: "" },
   updatedAt: { type: Date, default: Date.now }
 });
 
@@ -121,7 +121,7 @@ app.all('*', async (req, res) => {
   // 2. READ OPERATIONS
   if (method === 'GET') {
     if (action === 'getAnnouncement' || urlPath.includes('announcement')) {
-      // Priority Query: Find the latest document that has enabled: true OR forceUpdate: true
+      // Query for active or forced announcement in MongoDB Atlas
       let announcementData = await Announcement.findOne({
         $or: [
           { forceUpdate: true },
@@ -129,24 +129,25 @@ app.all('*', async (req, res) => {
         ]
       }).sort({ _id: -1 });
 
-      // Fallback: If no active or forced document is found, select the latest document
+      // If no active or forced announcement document is found, check latest document
       if (!announcementData) {
         announcementData = await Announcement.findOne({}).sort({ _id: -1 });
       }
 
+      // If no announcement document exists in DB at all, return disabled state cleanly (No default document created!)
       if (!announcementData) {
-        announcementData = await Announcement.create({
+        return res.json({
           enabled: false,
-          title: "📢 System Announcement",
-          message: "Welcome to Contact Directory!",
+          title: "",
+          message: "",
           buttonText: "Got It",
           actionUrl: "",
-          minAppVersion: "1.0.0",
+          minAppVersion: 1,
           minVersionName: "1.0.0",
-          latestAppVersion: "1.0.0",
+          latestAppVersion: 1,
           latestVersionName: "1.0.0",
           forceUpdate: false,
-          updateUrl: "https://rrajak7499.github.io/contact-directory/"
+          updateUrl: ""
         });
       }
 
@@ -156,8 +157,8 @@ app.all('*', async (req, res) => {
 
       return res.json({
         enabled: Boolean(announcementData.enabled),
-        title: announcementData.title || "📢 System Announcement",
-        message: announcementData.message || "Welcome to Contact Directory!",
+        title: announcementData.title || "",
+        message: announcementData.message || "",
         buttonText: announcementData.buttonText || "Got It",
         actionUrl: announcementData.actionUrl || "",
         minAppVersion: minVersionInt,
@@ -165,7 +166,7 @@ app.all('*', async (req, res) => {
         latestAppVersion: Number(announcementData.latestAppVersion) || 1,
         latestVersionName: String(announcementData.latestVersionName || announcementData.latestAppVersion || "1.0.0"),
         forceUpdate: Boolean(announcementData.forceUpdate),
-        updateUrl: announcementData.updateUrl || announcementData.actionUrl || "https://rrajak7499.github.io/contact-directory/"
+        updateUrl: announcementData.updateUrl || announcementData.actionUrl || ""
       });
     }
 
