@@ -46,6 +46,24 @@ app.use(async (req, res, next) => {
   }
 });
 
+// Helper function to compare semantic version strings (returns true if v1 < v2)
+function isVersionLower(v1, v2) {
+  try {
+    const p1 = String(v1 || '').replace(/v/gi, '').split('.').map(n => parseInt(n.trim(), 10) || 0);
+    const p2 = String(v2 || '').replace(/v/gi, '').split('.').map(n => parseInt(n.trim(), 10) || 0);
+    const maxLen = Math.max(p1.length, p2.length);
+    for (let i = 0; i < maxLen; i++) {
+      const c1 = p1[i] || 0;
+      const c2 = p2[i] || 0;
+      if (c1 < c2) return true;
+      if (c1 > c2) return false;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
 // Schemas & Models
 const UserSchema = new mongoose.Schema({
   userId: { type: String, required: true, unique: true },
@@ -121,23 +139,29 @@ app.all('*', async (req, res) => {
   // 2. READ OPERATIONS
   if (method === 'GET') {
     if (action === 'getAnnouncement' || urlPath.includes('announcement')) {
-      // Fetch all active announcement documents (enabled: true OR forceUpdate: true) sorted by newest first
-      const activeAnnouncements = await Announcement.find({
-        $or: [
-          { enabled: true },
-          { forceUpdate: true }
-        ]
-      }).sort({ _id: -1 });
+      const clientVersion = String(query.clientVersion || query.version || '1.0.1').trim();
 
-      // Smart Priority Resolution:
-      // 1. Enabled & Force Update
-      // 2. Enabled General Announcement
-      // 3. Force Update
-      // 4. Fallback latest document
-      let announcementData = activeAnnouncements.find(a => a.enabled && a.forceUpdate)
-        || activeAnnouncements.find(a => a.enabled)
-        || activeAnnouncements.find(a => a.forceUpdate)
-        || await Announcement.findOne({}).sort({ _id: -1 });
+      // 1. Check if there is an active FORCED UPDATE document for clients running an OUTDATED version
+      const allForcedUpdates = await Announcement.find({ forceUpdate: true }).sort({ _id: -1 });
+      let announcementData = allForcedUpdates.find(a => {
+        const minVer = String(a.minAppVersion || a.minVersionName || '').trim();
+        return minVer && isVersionLower(clientVersion, minVer);
+      });
+
+      // 2. If client is up-to-date (clientVersion >= minAppVersion), fetch active general announcement (enabled: true, forceUpdate: false)
+      if (!announcementData) {
+        announcementData = await Announcement.findOne({ enabled: true, forceUpdate: false }).sort({ _id: -1 });
+      }
+
+      // 3. Fallback to any enabled announcement document
+      if (!announcementData) {
+        announcementData = await Announcement.findOne({ enabled: true }).sort({ _id: -1 });
+      }
+
+      // 4. Fallback to latest document
+      if (!announcementData) {
+        announcementData = await Announcement.findOne({}).sort({ _id: -1 });
+      }
 
       // If no announcement document exists in DB at all, return disabled state cleanly
       if (!announcementData) {
@@ -452,6 +476,7 @@ app.all('*', async (req, res) => {
 });
 
 module.exports = app;
+
 
 
 
