@@ -121,22 +121,23 @@ app.all('*', async (req, res) => {
   // 2. READ OPERATIONS
   if (method === 'GET') {
     if (action === 'getAnnouncement' || urlPath.includes('announcement')) {
-      // 1. Prioritize active FORCED UPDATE documents FIRST so outdated clients are locked!
-      let announcementData = await Announcement.findOne({ enabled: true, forceUpdate: true }).sort({ _id: -1 });
+      // Fetch all active announcement documents (enabled: true OR forceUpdate: true) sorted by newest first
+      const activeAnnouncements = await Announcement.find({
+        $or: [
+          { enabled: true },
+          { forceUpdate: true }
+        ]
+      }).sort({ _id: -1 });
 
-      if (!announcementData) {
-        announcementData = await Announcement.findOne({ forceUpdate: true }).sort({ _id: -1 });
-      }
-
-      // 2. If no forced update, check for any active enabled announcement
-      if (!announcementData) {
-        announcementData = await Announcement.findOne({ enabled: true }).sort({ _id: -1 });
-      }
-
-      // 3. Fallback to latest document
-      if (!announcementData) {
-        announcementData = await Announcement.findOne({}).sort({ _id: -1 });
-      }
+      // Smart Priority Resolution:
+      // 1. Enabled & Force Update
+      // 2. Enabled General Announcement
+      // 3. Force Update
+      // 4. Fallback latest document
+      let announcementData = activeAnnouncements.find(a => a.enabled && a.forceUpdate)
+        || activeAnnouncements.find(a => a.enabled)
+        || activeAnnouncements.find(a => a.forceUpdate)
+        || await Announcement.findOne({}).sort({ _id: -1 });
 
       // If no announcement document exists in DB at all, return disabled state cleanly
       if (!announcementData) {
@@ -451,7 +452,6 @@ app.all('*', async (req, res) => {
 });
 
 module.exports = app;
-
 
 
 
