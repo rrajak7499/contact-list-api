@@ -96,12 +96,11 @@ const AboutSchema = new mongoose.Schema({
   title: { type: String, default: "Student Directory App" },
   version: { type: String, default: "v1.0.0" },
   description: { type: String, default: "A modern, offline-first mobile solution for managing student contact records, dynamic form formats, and cloud sync." },
-  features: { type: [String], default: ["Dynamic N-Section Form Builder", "Cloud Database Sync", "Caller ID Pop-Up", "Strict 10-Digit Phone Validation", "PDF Report Generation"] },
+  features: { type: [String], default: ["Dynamic N-Section Form Builder", "Cloud Database Sync", "Caller ID Pop-Up", "Strict Phone Validation", "PDF Report Generation"] },
   contactEmail: { type: String, default: "rrajak7499@gmail.com" },
   donateUs: { type: String, default: "caneraupi@ybl" }
 });
 
-// Announcement Schema
 const AnnouncementSchema = new mongoose.Schema({
   enabled: { type: Boolean, default: false },
   title: { type: String, default: "" },
@@ -142,29 +141,24 @@ app.all('*', async (req, res) => {
     if (action === 'getAnnouncement' || urlPath.includes('announcement')) {
       const clientVersion = String(query.clientVersion || query.version || '1.0.1').trim();
 
-      // 1. Check if there is an active FORCED UPDATE document for clients running an OUTDATED version
       const allForcedUpdates = await Announcement.find({ forceUpdate: true }).sort({ _id: -1 });
       let announcementData = allForcedUpdates.find(a => {
         const minVer = String(a.minAppVersion || a.minVersionName || '').trim();
         return minVer && isVersionLower(clientVersion, minVer);
       });
 
-      // 2. If client is up-to-date (clientVersion >= minAppVersion), fetch active general announcement (enabled: true, forceUpdate: false)
       if (!announcementData) {
         announcementData = await Announcement.findOne({ enabled: true, forceUpdate: false }).sort({ _id: -1 });
       }
 
-      // 3. Fallback to any enabled announcement document
       if (!announcementData) {
         announcementData = await Announcement.findOne({ enabled: true }).sort({ _id: -1 });
       }
 
-      // 4. Fallback to latest document
       if (!announcementData) {
         announcementData = await Announcement.findOne({}).sort({ _id: -1 });
       }
 
-      // If no announcement document exists in DB at all, return disabled state cleanly
       if (!announcementData) {
         return res.json({
           enabled: false,
@@ -280,23 +274,40 @@ app.all('*', async (req, res) => {
     }
   }
 
-  // 3. USER-AUTHENTICATED DELETE OPERATIONS
+  // 3. USER-AUTHENTICATED DELETE OPERATIONS (Handles query params & req.body seamlessly for both POST and DELETE methods)
   if (method === 'DELETE' || action === 'deleteFormat' || action === 'deleteEntry') {
     if (action === 'deleteFormat' || urlPath.includes('formats')) {
-      const formatId = query.formatId !== undefined ? query.formatId : body.formatId;
-      if (formatId === undefined || formatId === null) return res.status(400).json({ success: false, error: "formatId required" });
+      const formatId = query.formatId ?? body.formatId;
+      if (formatId === undefined || formatId === null || formatId === '') {
+        return res.status(400).json({ success: false, error: "formatId required" });
+      }
 
-      const deletedFormat = await Format.findOneAndDelete({ formatId: Number(formatId) });
-      await Entry.deleteMany({ formatId: Number(formatId) });
-      return res.json({ success: true, deleted: !!deletedFormat });
+      const targetFormatId = Number(formatId);
+      const deletedFormat = await Format.findOneAndDelete({ formatId: targetFormatId });
+      const deletedEntriesResult = await Entry.deleteMany({ formatId: targetFormatId });
+
+      console.log(`Deleted format ${targetFormatId} and ${deletedEntriesResult.deletedCount} associated entries from MongoDB`);
+      return res.json({
+        success: true,
+        deletedFormat: !!deletedFormat,
+        deletedEntriesCount: deletedEntriesResult.deletedCount
+      });
     }
 
     if (action === 'deleteEntry' || urlPath.includes('entries')) {
-      const entryId = query.entryId !== undefined ? query.entryId : body.entryId;
-      if (entryId === undefined || entryId === null) return res.status(400).json({ success: false, error: "entryId required" });
+      const entryId = query.entryId ?? body.entryId;
+      if (entryId === undefined || entryId === null || entryId === '') {
+        return res.status(400).json({ success: false, error: "entryId required" });
+      }
 
-      const deletedEntry = await Entry.findOneAndDelete({ entryId: Number(entryId) });
-      return res.json({ success: true, deleted: !!deletedEntry });
+      const targetEntryId = Number(entryId);
+      const deletedEntry = await Entry.findOneAndDelete({ entryId: targetEntryId });
+
+      console.log(`Deleted entry ${targetEntryId} from MongoDB`);
+      return res.json({
+        success: true,
+        deleted: !!deletedEntry
+      });
     }
   }
 
@@ -479,7 +490,6 @@ app.all('*', async (req, res) => {
 });
 
 module.exports = app;
-
 
 
 
