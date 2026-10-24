@@ -121,13 +121,19 @@ app.all('*', async (req, res) => {
   // 2. READ OPERATIONS
   if (method === 'GET') {
     if (action === 'getAnnouncement' || urlPath.includes('announcement')) {
-      // Prioritize active enabled announcement documents FIRST, then active forced updates
-      let announcementData = await Announcement.findOne({ enabled: true }).sort({ _id: -1 });
+      // 1. Prioritize active FORCED UPDATE documents FIRST so outdated clients are locked!
+      let announcementData = await Announcement.findOne({ enabled: true, forceUpdate: true }).sort({ _id: -1 });
 
       if (!announcementData) {
         announcementData = await Announcement.findOne({ forceUpdate: true }).sort({ _id: -1 });
       }
 
+      // 2. If no forced update, check for any active enabled announcement
+      if (!announcementData) {
+        announcementData = await Announcement.findOne({ enabled: true }).sort({ _id: -1 });
+      }
+
+      // 3. Fallback to latest document
       if (!announcementData) {
         announcementData = await Announcement.findOne({}).sort({ _id: -1 });
       }
