@@ -113,6 +113,7 @@ const AnnouncementSchema = new mongoose.Schema({
   latestAppVersion: { type: mongoose.Schema.Types.Mixed, default: "1.0.0" },
   latestVersionName: { type: String, default: "1.0.0" },
   forceUpdate: { type: Boolean, default: false },
+  showEverytime: { type: Boolean, default: false },
   updateUrl: { type: String, default: "" },
   updatedAt: { type: Date, default: Date.now }
 });
@@ -176,6 +177,7 @@ app.all('*', async (req, res) => {
           latestAppVersion: 1,
           latestVersionName: "1.0.0",
           forceUpdate: false,
+          showEverytime: false,
           updateUrl: ""
         });
       }
@@ -195,6 +197,7 @@ app.all('*', async (req, res) => {
         latestAppVersion: Number(announcementData.latestAppVersion) || 1,
         latestVersionName: String(announcementData.latestVersionName || announcementData.latestAppVersion || ""),
         forceUpdate: Boolean(announcementData.forceUpdate),
+        showEverytime: Boolean(announcementData.showEverytime),
         updateUrl: announcementData.updateUrl || announcementData.actionUrl || ""
       });
     }
@@ -476,6 +479,7 @@ app.all('*', async (req, res) => {
 });
 
 module.exports = app;
+
 
 
 
