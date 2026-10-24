@@ -121,20 +121,18 @@ app.all('*', async (req, res) => {
   // 2. READ OPERATIONS
   if (method === 'GET') {
     if (action === 'getAnnouncement' || urlPath.includes('announcement')) {
-      // Query for active or forced announcement in MongoDB Atlas
-      let announcementData = await Announcement.findOne({
-        $or: [
-          { forceUpdate: true },
-          { enabled: true }
-        ]
-      }).sort({ _id: -1 });
+      // Prioritize active enabled announcement documents FIRST, then active forced updates
+      let announcementData = await Announcement.findOne({ enabled: true }).sort({ _id: -1 });
 
-      // If no active or forced announcement document is found, check latest document
+      if (!announcementData) {
+        announcementData = await Announcement.findOne({ forceUpdate: true }).sort({ _id: -1 });
+      }
+
       if (!announcementData) {
         announcementData = await Announcement.findOne({}).sort({ _id: -1 });
       }
 
-      // If no announcement document exists in DB at all, return disabled state cleanly (No default document created!)
+      // If no announcement document exists in DB at all, return disabled state cleanly
       if (!announcementData) {
         return res.json({
           enabled: false,
@@ -151,8 +149,8 @@ app.all('*', async (req, res) => {
         });
       }
 
-      const rawMin = announcementData.minAppVersion || announcementData.minVersionName || "1.0.0";
-      const minVersionStr = String(rawMin);
+      const rawMin = announcementData.minAppVersion || announcementData.minVersionName || "";
+      const minVersionStr = String(rawMin).trim();
       const minVersionInt = parseInt(minVersionStr, 10) || 1;
 
       return res.json({
@@ -164,7 +162,7 @@ app.all('*', async (req, res) => {
         minAppVersion: minVersionInt,
         minVersionName: minVersionStr,
         latestAppVersion: Number(announcementData.latestAppVersion) || 1,
-        latestVersionName: String(announcementData.latestVersionName || announcementData.latestAppVersion || "1.0.0"),
+        latestVersionName: String(announcementData.latestVersionName || announcementData.latestAppVersion || ""),
         forceUpdate: Boolean(announcementData.forceUpdate),
         updateUrl: announcementData.updateUrl || announcementData.actionUrl || ""
       });
@@ -178,7 +176,7 @@ app.all('*', async (req, res) => {
       return res.json(aboutData);
     }
 
-    // GET SHARED FORMATS (Includes formats explicitly shared OR formats containing shared entries)
+    // GET SHARED FORMATS
     if (action === 'getSharedFormats') {
       const email = (query.email || query.userId || body.email || body.userId || '').toLowerCase().trim();
       if (!email) return res.status(400).json({ success: false, error: "email parameter required" });
@@ -203,7 +201,7 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, count: sharedEntries.length, entries: sharedEntries });
     }
 
-    // GET OWNED & SHARED FORMATS (Matches by userId OR email for full restore after app reinstall!)
+    // GET OWNED & SHARED FORMATS
     if (urlPath.includes('formats') || action === 'getFormats') {
       const userId = (query.userId || body.userId || '').trim();
       const email = (query.email || body.email || userId).toLowerCase().trim();
@@ -220,7 +218,7 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, count: formats.length, formats });
     }
 
-    // GET OWNED & SHARED ENTRIES (Matches by userId OR email for full restore after app reinstall!)
+    // GET OWNED & SHARED ENTRIES
     if (urlPath.includes('entries') || action === 'getEntries') {
       const userId = (query.userId || body.userId || '').trim();
       const email = (query.email || body.email || userId).toLowerCase().trim();
@@ -289,7 +287,7 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, message: `Format and all entries shared with ${cleanEmail}` });
     }
 
-    // Revoke Format Share (Also revokes access from ALL entries under that format)
+    // Revoke Format Share
     if (action === 'revokeFormatShare') {
       const { formatId, targetEmail } = body;
       if (formatId === undefined || formatId === null || !targetEmail) {
@@ -330,7 +328,7 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, message: `Entry shared with ${cleanEmail}` });
     }
 
-    // Revoke Entry Share (Also revokes Format share if recipient has 0 remaining shared entries in this format)
+    // Revoke Entry Share
     if (action === 'revokeEntryShare') {
       const { entryId, targetEmail } = body;
       if (entryId === undefined || entryId === null || !targetEmail) {
@@ -374,7 +372,7 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, user });
     }
 
-    // Sync Formats (Preserves sharedWith array)
+    // Sync Formats
     if (action === 'syncFormats' || urlPath.includes('formats')) {
       const rawFormats = Array.isArray(body.formats || body) ? (body.formats || body) : [body];
       if (rawFormats.length === 0) return res.json({ success: true, count: 0 });
@@ -407,7 +405,7 @@ app.all('*', async (req, res) => {
       return res.json({ success: true, count: rawFormats.length, result });
     }
 
-    // Sync Entries (Supports updating call status & remarks for shared entries)
+    // Sync Entries
     if (action === 'syncEntries' || urlPath.includes('entries')) {
       const rawEntries = Array.isArray(body.entries || body) ? (body.entries || body) : [body];
       if (rawEntries.length === 0) return res.json({ success: true, count: 0 });
@@ -447,6 +445,7 @@ app.all('*', async (req, res) => {
 });
 
 module.exports = app;
+
 
 
 
